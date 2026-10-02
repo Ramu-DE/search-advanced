@@ -1,0 +1,37 @@
+# ── Secrets / credentials (NEVER commit) ─────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials
+aws-credentials*
+
+# ── Node ─────────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+.npm/
+.vite/
+
+# ── Python / Jupyter ─────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+.python-version
+
+# ── OS / editor ──────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+.vscode/
+
+# ── Local runtime artifacts ──────────────────────────────────
+/tmp/
+*.pid

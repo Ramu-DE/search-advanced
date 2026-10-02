@@ -1,0 +1,9 @@
+{
+  "name": "rag-ui",
+  "version": "1.0.0",
+  "scripts": {
+    "backend": "cd backend && node src/index.js",
+    "frontend": "cd frontend && npx vite --port 3000",
+    "start": "npm run backend & npm run frontend"
+  }
+}
