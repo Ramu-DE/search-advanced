@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { API_BASE } from "../utils/api.js";
 import VectorGeometry from "./VectorGeometry.jsx";
 import SemanticSearchApproaches from "./SemanticSearchApproaches.jsx";
+import ContentVectorSimilarity from "./ContentVectorSimilarity.jsx";
 
 function ScoreBar({ score, max = 1 }) {
   const pct = (score / max) * 100;
@@ -149,6 +150,9 @@ export default function RetrievalStep({ ragState, onComplete, onBack }) {
 
       {/* Sparse vs Dense semantic search explainer (with angles) */}
       <SemanticSearchApproaches />
+
+      {/* Content (Vector) Similarity — AWS slide recreation with live angles */}
+      <ContentVectorSimilarity />
 
       {/* Loading */}
       {loading && (
