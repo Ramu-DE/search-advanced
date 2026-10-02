@@ -149,10 +149,10 @@ export default function RetrievalStep({ ragState, onComplete, onBack }) {
       </div>
 
       {/* Sparse vs Dense semantic search explainer (with angles) */}
-      <SemanticSearchApproaches />
+      <SemanticSearchApproaches query={result?.query} result={result} />
 
-      {/* Content (Vector) Similarity — AWS slide recreation with live angles */}
-      <ContentVectorSimilarity />
+      {/* Content (Vector) Similarity — driven by the uploaded doc + query */}
+      <ContentVectorSimilarity sessionId={sessionId} query={result?.query} />
 
       {/* Loading */}
       {loading && (

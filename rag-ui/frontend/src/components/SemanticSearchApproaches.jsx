@@ -4,92 +4,91 @@ import { motion } from "framer-motion";
 /*
  * Semantic Search — Two Approaches (Sparse vs Dense), with angle visualization.
  *
- * This is a self-contained educational widget. It demonstrates the key idea:
- *   - Both sparse and dense encoding score relevance with the SAME math
- *     (dot product → cosine → angle).
- *   - SPARSE vectors live in a huge, mostly-zero term space. Two texts that
- *     share no vocabulary are ORTHOGONAL (90°). Angle is driven by lexical
- *     overlap (and learned term expansion).
- *   - DENSE vectors live in a small continuous space where learned semantics
- *     place related meanings at a SMALL angle even with zero shared words.
+ * Driven by the user's REAL query and the chunks retrieved from the uploaded
+ * document:
+ *   - DENSE angle  = the actual angle the backend computed between the query
+ *     embedding and the chunk embedding (true semantic geometry from Bedrock).
+ *   - SPARSE angle = the bag-of-words cosine between the query and the SAME
+ *     chunk text, computed in the browser (true lexical overlap).
  *
- * The sparse angles below are computed from the actual bag-of-words of the
- * sample texts (a real sparse TF representation), so the geometry is honest.
- * The dense angles are illustrative values representing what a trained encoder
- * would produce (synonyms land close even with no shared tokens).
+ * This contrast on the user's own data shows why dense retrieval finds a chunk
+ * that is "about" the query even when it shares few/no exact words, while
+ * sparse/lexical scoring depends on shared vocabulary.
+ *
+ * Before any search is run, it falls back to a small car/automobile teaching
+ * example so the panel is still meaningful.
  */
 
 const QUERY_COLOR = "#6366f1";
-const DOC_COLOR = "#34d399";
 
-// ── sample data ───────────────────────────────────────────────────────────
-const QUERY_TEXT = "car";
-// Doc A shares the token with the query → lexical match.
-// Doc B is a synonym with NO shared token → semantic match only.
-const DOC_A = { label: 'Doc A: "a fast car"', tokens: ["a", "fast", "car"] };
-const DOC_B = { label: 'Doc B: "a quick automobile"', tokens: ["a", "quick", "automobile"] };
-
-// ── sparse: real bag-of-words cosine ────────────────────────────────────────
+// ── tokenization + sparse bag-of-words cosine ───────────────────────────────
+const STOP = new Set([
+  "a","an","the","is","are","of","to","in","on","and","or","for","with",
+  "that","this","it","as","by","at","from","be","was","were","what","which",
+  "how","do","does","did","can","you","your","i","we","they","he","she",
+]);
+function tokenize(text) {
+  return (text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length > 1 && !STOP.has(w));
+}
 function tf(tokens) {
   const m = {};
   for (const t of tokens) m[t] = (m[t] || 0) + 1;
   return m;
 }
 function sparseCosine(a, b) {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
   let dot = 0, na = 0, nb = 0;
-  for (const k of keys) {
-    const va = a[k] || 0;
-    const vb = b[k] || 0;
-    dot += va * vb;
-  }
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const k of keys) dot += (a[k] || 0) * (b[k] || 0);
   for (const k of Object.keys(a)) na += a[k] * a[k];
   for (const k of Object.keys(b)) nb += b[k] * b[k];
-  const denom = Math.sqrt(na) * Math.sqrt(nb) || 1;
-  return dot / denom;
+  return dot / ((Math.sqrt(na) * Math.sqrt(nb)) || 1);
+}
+function sharedTerms(aTokens, bTokens) {
+  const bset = new Set(bTokens);
+  return [...new Set(aTokens.filter((t) => bset.has(t)))];
 }
 const cosToDeg = (c) => (Math.acos(Math.max(-1, Math.min(1, c))) * 180) / Math.PI;
 
-// ── a reusable "angle between query and doc" diagram ───────────────────────
-function AnglePair({ deg, docColor = DOC_COLOR, caption }) {
+// ── reusable angle diagram ──────────────────────────────────────────────────
+function AnglePair({ deg, docColor, caption }) {
   const size = 150;
   const cx = size / 2;
   const cy = size - 24;
   const r = size - 60;
   const rad = (deg * Math.PI) / 180;
-  // query points straight up; doc rotated clockwise by `deg`
-  const qx = cx;
-  const qy = cy - r;
   const dx = cx + r * Math.sin(rad);
   const dy = cy - r * Math.cos(rad);
   const arcR = 28;
-  const ax = cx;
-  const ay = cy - arcR;
   const bx = cx + arcR * Math.sin(rad);
   const by = cy - arcR * Math.cos(rad);
   const largeArc = deg > 180 ? 1 : 0;
+  const uid = React.useId();
 
   return (
     <div className="flex flex-col items-center">
-      <svg viewBox={`0 0 ${size} ${size}`} className="w-40 h-40">
+      <svg viewBox={`0 0 ${size} ${size}`} className="w-36 h-36">
         <defs>
-          <marker id="apQ" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+          <marker id={`apQ${uid}`} markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
             <path d="M0,0 L7,3 L0,6 Z" fill={QUERY_COLOR} />
           </marker>
-          <marker id="apD" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+          <marker id={`apD${uid}`} markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
             <path d="M0,0 L7,3 L0,6 Z" fill={docColor} />
           </marker>
         </defs>
         <circle cx={cx} cy={cy} r="3" fill="#475569" />
-        <line x1={cx} y1={cy} x2={qx} y2={qy} stroke={QUERY_COLOR} strokeWidth="3" markerEnd="url(#apQ)" />
-        <line x1={cx} y1={cy} x2={dx} y2={dy} stroke={docColor} strokeWidth="3" markerEnd="url(#apD)" />
-        <path d={`M ${ax} ${ay} A ${arcR} ${arcR} 0 ${largeArc} 1 ${bx} ${by}`}
+        <line x1={cx} y1={cy} x2={cx} y2={cy - r} stroke={QUERY_COLOR} strokeWidth="3" markerEnd={`url(#apQ${uid})`} />
+        <line x1={cx} y1={cy} x2={dx} y2={dy} stroke={docColor} strokeWidth="3" markerEnd={`url(#apD${uid})`} />
+        <path d={`M ${cx} ${cy - arcR} A ${arcR} ${arcR} 0 ${largeArc} 1 ${bx} ${by}`}
           fill="none" stroke="#94a3b8" strokeWidth="1.5" />
         <text x={cx + 6} y={cy - arcR - 4} fill="#e2e8f0" fontSize="13" fontWeight="bold" fontFamily="monospace">
           {deg.toFixed(0)}°
         </text>
       </svg>
-      <div className="text-[11px] text-slate-500 text-center -mt-2">{caption}</div>
+      <div className="text-[11px] text-slate-500 text-center -mt-1 leading-tight">{caption}</div>
     </div>
   );
 }
@@ -110,31 +109,44 @@ const SPARSE_FACTS = [
   "Pre-trained: opensearch-neural-sparse-v2",
 ];
 
-export default function SemanticSearchApproaches() {
+export default function SemanticSearchApproaches({ query, result }) {
   const [open, setOpen] = useState(false);
 
-  // SPARSE angles: computed from real bag-of-words of the sample texts.
-  const sparse = useMemo(() => {
-    const q = tf([QUERY_TEXT]);
-    const a = tf(DOC_A.tokens);
-    const b = tf(DOC_B.tokens);
+  // Build two comparison items from REAL data when available.
+  const data = useMemo(() => {
+    const top = result?.topResults;
+    if (query && top && top.length >= 1) {
+      const qTok = tokenize(query);
+      const qTf = tf(qTok);
+      const items = top.slice(0, 2).map((r, i) => {
+        const cTok = tokenize(r.text);
+        const sparseDeg = cosToDeg(sparseCosine(qTf, tf(cTok)));
+        const denseDeg =
+          typeof r.angleDeg === "number" ? r.angleDeg : cosToDeg(r.score ?? 0);
+        const shared = sharedTerms(qTok, cTok);
+        return {
+          label: `Chunk #${r.chunkId + 1}`,
+          sparseDeg,
+          denseDeg,
+          shared,
+        };
+      });
+      return { live: true, query, items };
+    }
+    // Fallback teaching example (no search yet)
     return {
-      a: cosToDeg(sparseCosine(q, a)), // shares "car" → < 90°
-      b: cosToDeg(sparseCosine(q, b)), // no shared token → exactly 90°
+      live: false,
+      query: "car",
+      items: [
+        { label: '"a fast car"', sparseDeg: cosToDeg(sparseCosine(tf(["car"]), tf(["fast", "car"]))), denseDeg: 22, shared: ["car"] },
+        { label: '"a quick automobile"', sparseDeg: cosToDeg(sparseCosine(tf(["car"]), tf(["quick", "automobile"]))), denseDeg: 31, shared: [] },
+      ],
     };
-  }, []);
-
-  // DENSE angles: illustrative values a trained encoder would produce.
-  // "car" ↔ "fast car": very close. "car" ↔ "quick automobile": still close
-  // (synonym) even though they share NO tokens — the whole point of dense.
-  const dense = { a: 22, b: 31 };
+  }, [query, result]);
 
   return (
     <div className="glass rounded-2xl p-6 border border-indigo-500/10">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between text-left"
-      >
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
         <div>
           <h3 className="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
             🧭 Semantic Search — Two Approaches
@@ -152,6 +164,22 @@ export default function SemanticSearchApproaches() {
           animate={{ opacity: 1, height: "auto" }}
           className="mt-6 space-y-6 overflow-hidden"
         >
+          {/* context line */}
+          <div className="text-xs rounded-lg px-3 py-2 bg-dark-800/60 border border-white/5">
+            {data.live ? (
+              <span className="text-slate-400">
+                Comparing your query{" "}
+                <span className="text-indigo-400 font-mono">"{data.query}"</span>{" "}
+                against the top retrieved chunks from your document.
+              </span>
+            ) : (
+              <span className="text-slate-500">
+                Example shown. Run a search above and this panel updates with your
+                real query and retrieved chunks.
+              </span>
+            )}
+          </div>
+
           <div className="grid md:grid-cols-2 gap-5">
             {/* SPARSE */}
             <div className="bg-dark-800/60 rounded-xl p-5 border border-amber-500/15 space-y-4">
@@ -163,21 +191,21 @@ export default function SemanticSearchApproaches() {
               </div>
               <ul className="space-y-1.5 text-xs text-slate-400">
                 {SPARSE_FACTS.map((f) => (
-                  <li key={f} className="flex gap-2">
-                    <span className="text-amber-500/60 mt-0.5">▸</span>
-                    <span>{f}</span>
-                  </li>
+                  <li key={f} className="flex gap-2"><span className="text-amber-500/60 mt-0.5">▸</span><span>{f}</span></li>
                 ))}
               </ul>
               <div className="flex justify-around pt-2 border-t border-white/5">
-                <AnglePair deg={sparse.a} docColor="#f59e0b"
-                  caption={<>query "car" ↔ Doc A<br />shares the word "car"</>} />
-                <AnglePair deg={sparse.b} docColor="#f59e0b"
-                  caption={<>query "car" ↔ Doc B<br />no shared word → 90°</>} />
+                {data.items.map((it, i) => (
+                  <AnglePair key={i} deg={it.sparseDeg} docColor="#f59e0b"
+                    caption={<>q ↔ {it.label}<br />
+                      {it.shared.length
+                        ? `shares: ${it.shared.slice(0, 3).join(", ")}`
+                        : "no shared word → 90°"}</>} />
+                ))}
               </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">
                 Angle is driven by <strong className="text-amber-400">shared vocabulary</strong>.
-                A synonym with no overlapping token is <strong>orthogonal (90°)</strong> — pure
+                A chunk with no overlapping token sits at <strong>90° (orthogonal)</strong> — pure
                 lexical matching misses it unless term expansion adds the synonym.
               </p>
             </div>
@@ -192,22 +220,21 @@ export default function SemanticSearchApproaches() {
               </div>
               <ul className="space-y-1.5 text-xs text-slate-400">
                 {DENSE_FACTS.map((f) => (
-                  <li key={f} className="flex gap-2">
-                    <span className="text-emerald-500/60 mt-0.5">▸</span>
-                    <span>{f}</span>
-                  </li>
+                  <li key={f} className="flex gap-2"><span className="text-emerald-500/60 mt-0.5">▸</span><span>{f}</span></li>
                 ))}
               </ul>
               <div className="flex justify-around pt-2 border-t border-white/5">
-                <AnglePair deg={dense.a} docColor="#34d399"
-                  caption={<>query "car" ↔ Doc A<br />semantically close</>} />
-                <AnglePair deg={dense.b} docColor="#34d399"
-                  caption={<>query "car" ↔ Doc B<br />synonym still close</>} />
+                {data.items.map((it, i) => (
+                  <AnglePair key={i} deg={it.denseDeg} docColor="#34d399"
+                    caption={<>q ↔ {it.label}<br />
+                      {data.live ? "real embedding angle" : "semantically close"}</>} />
+                ))}
               </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">
                 Angle is driven by <strong className="text-emerald-400">learned meaning</strong>.
-                "car" and "automobile" land at a <strong>small angle</strong> despite sharing
-                no tokens — the encoder places synonyms near each other in space.
+                {data.live
+                  ? " Even a chunk that shares few words can land at a small angle because the encoder understood its meaning."
+                  : ' "car" and "automobile" land at a small angle despite sharing no tokens.'}
               </p>
             </div>
           </div>
@@ -215,12 +242,12 @@ export default function SemanticSearchApproaches() {
           {/* takeaway */}
           <div className="bg-indigo-500/5 border border-indigo-500/15 rounded-xl p-4 text-xs text-slate-400 leading-relaxed">
             <span className="text-indigo-400 font-semibold">Same math, different space.</span>{" "}
-            Both compute <span className="font-mono text-slate-300">cos θ = (q · d) / (‖q‖‖d‖)</span>{" "}
-            and the angle <span className="font-mono text-slate-300">θ = arccos(cos θ)</span>.
-            Sparse lives in a ~30k-dim term space (mostly zeros) where the angle reflects
-            <strong className="text-amber-400"> word overlap</strong>; dense lives in a ~384–768-dim
-            space where the angle reflects <strong className="text-emerald-400"> meaning</strong>.
-            Hybrid search combines both.
+            Both compute <span className="font-mono text-slate-300">cos θ = (q · d) / (‖q‖‖d‖)</span>,{" "}
+            <span className="font-mono text-slate-300">θ = arccos(cos θ)</span>.
+            Sparse angle reflects <strong className="text-amber-400">word overlap</strong>; dense
+            angle reflects <strong className="text-emerald-400">meaning</strong>. Notice how the dense
+            angle is often much smaller than the sparse angle for the same chunk — that gap is exactly
+            what semantic search buys you. Hybrid search combines both.
           </div>
         </motion.div>
       )}
